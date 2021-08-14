@@ -14,12 +14,12 @@ exports.initGame = function (socketIo, socket) {
   gameSocket.on('joinExistingGame', (playerName, existingGameId) => {
     console.log("Got joinExistingGame");
     joinExistingGame(playerName, existingGameId, gameSocket);
-  })
+  });
 
   gameSocket.on('gameStatus', (gameId) => {
     console.log("got request for game status for game id", gameId);
     transmitGameStatus(gameId, gameSocket);
-  })
+  });
 
   gameSocket.on('getTile', () => assignTileToPlayer(gameSocket));
 
@@ -36,10 +36,7 @@ function transmitGameStatus(gameId, gameSocket) {
 }
 
 function transmitChat(msg, gameSocket) {
-  console.log("sending msg from " + gameSocket.id + ": " + msg);
-  console.log(games);
-  //io.emit('chat', { name: gameSocket.id, msg: msg });
-  // gameID is not defined! How do we know what game ID this is? Can the client tell the server?
+  console.log("sending msg from " + gameSocket.id + ": " + msg.msg);
   io.to(msg.gameId).emit('chat', { name: games[msg.gameId].players[gameSocket.id].name, msg: msg.msg });
 }
 
@@ -50,8 +47,11 @@ function createNewGame(playerName, gameSocket) {
   let game = {};
   game.id = gameId;
   game.players = {};
-  game.players[gameSocket.id] = {};
+  game.players[gameSocket.id] = { host: true };
   game.players[gameSocket.id].name = playerName;
+  // TODO set up initial tiles, empire card amts, etc. Store in games[game.id].
+
+
   games[game.id] = game;
   console.log("new game", games);
 
@@ -61,13 +61,16 @@ function createNewGame(playerName, gameSocket) {
 
 function joinExistingGame(playerName, existingGameId, gameSocket) {
   console.log(`${playerName} is joining game ${existingGameId}`);
-  gameSocket.join(existingGameId);
-
-  games[existingGameId].players[gameSocket.id] = { name: playerName };
-  console.log("join existing game", games);
-
-  io.to(existingGameId).emit('joinExistingGame', `${playerName} joined the game!`);
-  transmitGameStatus(existingGameId);
+  if (games[existingGameId]) {
+    // TODO verify the game has not already started. Verify the game does not have more than 4 players.
+    console.log("join existing game", games);
+    gameSocket.join(existingGameId);
+    games[existingGameId].players[gameSocket.id] = { name: playerName };
+    io.to(existingGameId).emit('joinExistingGame', `${playerName} joined the game!`);
+    transmitGameStatus(existingGameId);
+  } else {
+    // TODO Handle errors if game does not exist, has already started, has max number of players.
+  }
 }
 
 
