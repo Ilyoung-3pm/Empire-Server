@@ -16,6 +16,11 @@ exports.initGame = function (socketIo, socket) {
     joinExistingGame(playerName, existingGameId, gameSocket);
   })
 
+  gameSocket.on('gameStatus', (gameId) => {
+    console.log("got request for game status for game id", gameId);
+    transmitGameStatus(gameId, gameSocket);
+  })
+
   gameSocket.on('getTile', () => assignTileToPlayer(gameSocket));
 
   gameSocket.on('chat', (msg) => {
@@ -23,26 +28,35 @@ exports.initGame = function (socketIo, socket) {
   })
 }
 
+function transmitGameStatus(gameId, gameSocket) {
+  console.log("transmitting game status from server", gameId);
+  console.log("gameId type", typeof gameId);
+  const game = games[gameId];
+  io.to(gameId).emit('gameStatus', game);
+}
+
 function transmitChat(msg, gameSocket) {
   console.log("sending msg from " + gameSocket.id + ": " + msg);
   console.log(games);
-  io.emit('chat', { name: gameSocket.id, msg: msg });
+  //io.emit('chat', { name: gameSocket.id, msg: msg });
   // gameID is not defined! How do we know what game ID this is? Can the client tell the server?
-  //io.in(gameId).emit('chat', { name: games[gameId].players[gameSocket.id].name, msg: msg });
+  io.to(msg.gameId).emit('chat', { name: games[msg.gameId].players[gameSocket.id].name, msg: msg.msg });
 }
 
 function createNewGame(playerName, gameSocket) {
   console.log(playerName);
-  gameId = (Math.random() * 10000) | 0;
+  const gameId = ((Math.random() * 10000) | 0).toString();
 
   let game = {};
-  game.id = gameId.toString();
-  game.players = { [gameSocket.id]: { name: playerName } }
+  game.id = gameId;
+  game.players = {};
+  game.players[gameSocket.id] = {};
+  game.players[gameSocket.id].name = playerName;
   games[game.id] = game;
   console.log("new game", games);
 
-  io.emit('startNewGame', { gameId: gameId, userId: gameSocket.id });
-  gameSocket.join(gameId.toString());
+  gameSocket.join(gameId);
+  io.to(gameId).emit('startNewGame', { gameId: gameId, userId: gameSocket.id });
 }
 
 function joinExistingGame(playerName, existingGameId, gameSocket) {
@@ -52,7 +66,8 @@ function joinExistingGame(playerName, existingGameId, gameSocket) {
   games[existingGameId].players[gameSocket.id] = { name: playerName };
   console.log("join existing game", games);
 
-  io.emit('joinExistingGame', `${playerName} joined the game!`);
+  io.to(existingGameId).emit('joinExistingGame', `${playerName} joined the game!`);
+  transmitGameStatus(existingGameId);
 }
 
 
