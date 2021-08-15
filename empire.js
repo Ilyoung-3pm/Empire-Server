@@ -1,3 +1,5 @@
+const { initializeGame } = require('./GameService.js');
+
 var io;
 var games = {};
 
@@ -20,6 +22,10 @@ exports.initGame = function (socketIo, socket) {
     console.log("got request for game status for game id", gameId);
     transmitGameStatus(gameId, gameSocket);
   });
+
+  gameSocket.on('startGame', (gameId) => {
+    startGame(gameId);
+  })
 
   gameSocket.on('getTile', () => assignTileToPlayer(gameSocket));
 
@@ -49,8 +55,6 @@ function createNewGame(playerName, gameSocket) {
   game.players = {};
   game.players[gameSocket.id] = { host: true };
   game.players[gameSocket.id].name = playerName;
-  // TODO set up initial tiles, empire card amts, etc. Store in games[game.id].
-
 
   games[game.id] = game;
   console.log("new game", games);
@@ -63,16 +67,35 @@ function joinExistingGame(playerName, existingGameId, gameSocket) {
   console.log(`${playerName} is joining game ${existingGameId}`);
   if (games[existingGameId]) {
     // TODO verify the game has not already started. Verify the game does not have more than 4 players.
-    console.log("join existing game", games);
     gameSocket.join(existingGameId);
     games[existingGameId].players[gameSocket.id] = { name: playerName };
     io.to(existingGameId).emit('joinExistingGame', `${playerName} joined the game!`);
     transmitGameStatus(existingGameId);
+    console.log("join existing game", games);
   } else {
     // TODO Handle errors if game does not exist, has already started, has max number of players.
   }
 }
 
+async function startGame(gameId) {
+  io.to(gameId).emit('startGame', true);
+  io.to(gameId).emit('log', "The game has started!");
+
+  const updatedGame = initializeGame(games[gameId]);
+  games[gameId] = updatedGame;
+
+  const rooms = io.of("/").adapter.rooms;
+  const sids = io.of("/").adapter.sids;
+  console.log("rooms", rooms);
+  console.log("sids", sids);
+
+  // Let players know what they have...
+  Object.keys(updatedGame.players).forEach((playerId) => {
+    const playerStatus = updatedGame.players[playerId];
+    console.log(`Emitting status to player ${playerId}`, playerStatus);
+    io.to(playerId).emit('playerStatus', playerStatus);
+  });
+}
 
 function assignTileToPlayer(gameSocket) {
   console.log("Assigning a tile...");
