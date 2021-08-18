@@ -1,4 +1,4 @@
-const { initializeGame } = require('./GameService.js');
+const { initializeGame, calculateDistanceTo1A } = require('./GameService.js');
 
 var io;
 var games = {};
@@ -77,26 +77,66 @@ function joinExistingGame(playerName, existingGameId, gameSocket) {
   }
 }
 
-async function startGame(gameId) {
+function startGame(gameId) {
   io.to(gameId).emit('startGame', true);
   io.to(gameId).emit('log', "The game has started!");
 
-  const updatedGame = initializeGame(games[gameId]);
-  games[gameId] = updatedGame;
+  const game = initializeGame(games[gameId]);
+  //games[gameId] = updatedGame;
 
-  const rooms = io.of("/").adapter.rooms;
-  const sids = io.of("/").adapter.sids;
-  console.log("rooms", rooms);
-  console.log("sids", sids);
+  // Assign the first tile and determine the first player.
+  let firstPlayer;
+  Object.keys(game.players).forEach((playerId) => {
+    const tile = game.tiles.pop();
+    if (!firstPlayer) {
+      firstPlayer = { id: playerId, distance: calculateDistanceTo1A(tile) }
+    } else {
+      const distance = calculateDistanceTo1A(tile);
+      // TODO determine if tile is adjacent to another first tile....damn.
+      if (distance < firstPlayer.distance) {
+        firstPlayer = { id: playerId, distance: distance }
+      }
+    }
+
+    const playerName = game.players[playerId].name;
+    game.players[playerId].tiles = [tile];
+    io.to(gameId).emit('log', `${playerName}'s picked ${tile}`);
+  });
+
+  // Nice TODO If playerId = socketId, emit player name to everyone BUT player. Emit "You go first" to socketId.
+  io.to(gameId).emit('log', `${game.players[firstPlayer.id].name} was closest to 1-A. They go first.`);
+
+  //Put tiles on the board.
+  //TODO Pop tiles from each players .tiles and assign to board?
+
+  // Assign 6 tiles to each player.
+  Object.keys(game.players).forEach((playerId) => {
+    const player = game.players[playerId]
+    let tiles = [];
+    while (tiles.length < 6) {
+      tiles.push(game.tiles.pop());
+    }
+    player.tiles = tiles;
+    game.players[playerId] = player;
+    io.to(playerId).emit('playerStatus', player);
+  })
+
+  // Set active player to first player.
 
   // Let players know what they have...
-  Object.keys(updatedGame.players).forEach((playerId) => {
-    const playerStatus = updatedGame.players[playerId];
-    console.log(`Emitting status to player ${playerId}`, playerStatus);
-    io.to(playerId).emit('playerStatus', playerStatus);
-  });
+  // Object.keys(updatedGame.players).forEach((playerId) => {
+  //   const playerStatus = updatedGame.players[playerId];
+  //   console.log(`Emitting status to player ${playerId}`, playerStatus);
+  //   io.to(playerId).emit('playerStatus', playerStatus);
+  // });
+  games[gameId] = game;
 }
 
-function assignTileToPlayer(gameSocket) {
+function assignTileToPlayer(playerId, gameId) {
   console.log("Assigning a tile...");
+  // const game = games[gameId];
+  // const tile = game.tiles.pop();
+  // player.tiles = [firstTile];
+  // game.players[playerId] = player;
+
 }

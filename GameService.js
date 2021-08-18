@@ -34,16 +34,19 @@ exports.initializeGame = function (game) {
   // For each Empire, assign properties: tiles, assets
   game.empires = generateDefaultEmpires();
 
-  // Assign each player 1 tile and $6000.
+  // Assign each player $6000.
   game.tiles = generateTiles();
   Object.keys(game.players).forEach((playerId) => {
     let player = game.players[playerId];
     player.cash = 6000;
-    const firstTile = game.tiles.pop();
-    player.tiles = [firstTile];
-    game.players[playerId] = player;
   });
 
-  console.log("initialized game", game);
   return game;
 }
+
+exports.calculateDistanceTo1A = function (tile) {
+  const row = Number(tile.split('-')[0]);
+  const column = tile.charCodeAt(tile.length - 1);
+  return (row + column) - 66;
+}
+
