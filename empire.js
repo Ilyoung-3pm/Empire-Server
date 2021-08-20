@@ -61,15 +61,27 @@ function createNewGame(playerName, gameSocket) {
 
   gameSocket.join(gameId);
   io.to(gameId).emit('startNewGame', { gameId: gameId, userId: gameSocket.id });
+  io.to(gameId).emit('log', `${playerName} has joined the game.`);
 }
 
 function joinExistingGame(playerName, existingGameId, gameSocket) {
   console.log(`${playerName} is joining game ${existingGameId}`);
   if (games[existingGameId]) {
+    const game = games[existingGameId];
     // TODO verify the game has not already started. Verify the game does not have more than 4 players.
     gameSocket.join(existingGameId);
-    games[existingGameId].players[gameSocket.id] = { name: playerName };
+    //games[existingGameId].players[gameSocket.id] = { name: playerName };
+    game.players[gameSocket.id] = { name: playerName };
     io.to(existingGameId).emit('joinExistingGame', `${playerName} joined the game!`);
+    io.to(existingGameId).emit('log', `${playerName} has joined the game.`);
+
+    // When a player joins the game, let them know who else is in the game.
+    Object.keys(games[existingGameId].players).forEach((playerId) => {
+      if (playerId != gameSocket.id) {
+        io.to(gameSocket.id).emit('log', `${game.players[playerId].name} is in the game.`);
+      }
+    })
+    games[existingGameId] = game;
     transmitGameStatus(existingGameId);
     console.log("join existing game", games);
   } else {
@@ -103,8 +115,11 @@ function startGame(gameId) {
     io.to(gameId).emit('log', `${playerName}'s picked ${tile}`);
   });
 
+
+  game.activePlayer = firstPlayer.id;
   // Nice TODO If playerId = socketId, emit player name to everyone BUT player. Emit "You go first" to socketId.
   io.to(gameId).emit('log', `${game.players[firstPlayer.id].name} was closest to 1-A. They go first.`);
+  io.to(gameId).emit('activePlayer', firstPlayer.id);
 
   //Put tiles on the board.
   //TODO Pop tiles from each players .tiles and assign to board?
