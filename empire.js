@@ -1,7 +1,7 @@
 const { initializeGame, calculateDistanceTo1A } = require('./GameService.js');
 
 var io;
-var games = {};
+var games = {}; // keys -> id, players: {id: { name, tiles: [], cash: 6000 }}, activePlayer: id, board: { 1-A: null, 2-C: 'Wingspan' }
 
 exports.initGame = function (socketIo, socket) {
   io = socketIo;
@@ -100,6 +100,7 @@ function startGame(gameId) {
   let firstPlayer;
   Object.keys(game.players).forEach((playerId) => {
     const tile = game.tiles.pop();
+    game.board[tile] = null;
     if (!firstPlayer) {
       firstPlayer = { id: playerId, distance: calculateDistanceTo1A(tile) }
     } else {
@@ -115,6 +116,7 @@ function startGame(gameId) {
     io.to(gameId).emit('log', `${playerName}'s picked ${tile}`);
   });
 
+  io.to(gameId).emit('board', game.board);
 
   game.activePlayer = firstPlayer.id;
   // Nice TODO If playerId = socketId, emit player name to everyone BUT player. Emit "You go first" to socketId.

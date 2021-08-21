@@ -41,6 +41,8 @@ exports.initializeGame = function (game) {
     player.cash = 6000;
   });
 
+  game.board = {};
+
   return game;
 }
 
