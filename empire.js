@@ -1,7 +1,7 @@
 const { initializeGame, calculateDistanceTo1A, getAdjacentTiles, getAdjacentTilesOnBoard, shuffleTiles, getEmpiresByAdjacentTiles, getAvailableEmpires, getAvailableEmpiresWithAssets } = require('./GameService.js');
 
 var io;
-var games = {}; // keys -> id, players: {id: { name, tiles: [], cash: 6000 }}, activePlayer: id, board: { 1-A: null, 2-C: 'Wingspan' }
+var games = {}; // keys -> id, players: {id: { name, tiles: [], cash: 6000, assets: { Wingspan: 2 } }}, activePlayer: id, board: { 1-A: null, 2-C: 'Wingspan' }
 
 exports.initGame = function (socketIo, socket) {
   io = socketIo;
@@ -188,6 +188,7 @@ function playTile(tile, gameId, playerId) {
   io.to(playerId).emit('playerStatus', game.players[playerId]);
   // Add tile to board.
   game.board[tile] = null;
+  game.lastPlayedTile = tile;
 
   /* Determine what the tile does...*/
   // Are there any adjacent tiles on the board?
@@ -235,20 +236,43 @@ function playTile(tile, gameId, playerId) {
 
 function addEmpireToBoard(gameId, empire, playerId) {
   let game = games[gameId];
+  const player = game.players[playerId];
   // Set tiles in Empire.empire
-
-  // Update tile in Board obj.
+  let empireTiles = getAdjacentTilesOnBoard(game.lastPlayedTile, game.board);
+  empireTiles.push(game.lastPlayedTile);
+  empireTiles.forEach((tile) => {
+    game.empires[empire].tiles.add(tile);
+    // Update tile in Board obj.
+    game.board[tile] = empire;
+  });
 
   // Log that player put empire on board.
+  io.to(gameId).emit('log', `${player.name} created the empire ${empire}.`);
 
-  // Give player one free asset of this empire.
+  // Give player one free asset of this empire, if available.
+  if (game.empires[empire].assets > 0) {
+    if (player.assets) {
+      player.assets[empire] = 1;
+    } else {
+      player.assets = { [empire]: 1 }
+    }
+    io.to(gameId).emit('log', `${player.name} received 1 free asset of ${empire}.`);
 
-  // Subtract 1 asset from empire.
+    // Subtract 1 asset from empire.
+    --game.empires[empire].assets;
+  }
+
+  transmitGameStatus(gameId);
 
   // Emit 'buyAssets' to player.
-
-  // TransmitGameStatus
-
+  const availableAssetsToBuy = getAvailableEmpiresWithAssets(game.empires);
+  if (Object.keys(availableAssetsToBuy).length > 0 && player.cash > 0) { // TODO actually see if player can buy anything that's available.
+    io.to(playerId).emit('buyAssets', availableAssetsToBuy);
+  } else {
+    console.log("Nothing to buy, next player");
+    advanceToNextPlayer(gameId);
+    assignTileToPlayer(playerId, gameId);
+  }
 }
 
 function advanceToNextPlayer(gameId) {

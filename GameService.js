@@ -139,9 +139,68 @@ exports.getAvailableEmpiresWithAssets = function (empires) {
   Object.keys(empires).forEach((empireName) => {
     const empire = empires[empireName];
     if (empire.tiles.size > 0 && empire.assets != 0) {
-      availableEmpires[empireName] = empire.assets; // TODO pass # available and cost per asset.
+      const price = getEmpireSizeStats(empireName, empire.tiles.size);
+      availableEmpires[empireName] = { ...price, assets: empire.assets }
     }
   });
   return availableEmpires;
+}
+
+function getEmpireSizeStats(empire, empireSize) {
+  switch (empire) {
+    case 'WINGSPAN':
+    case 'TOTEM': return getBudgetEmpireStats(empireSize);
+    case 'GLOBAL':
+    case 'PALADIN':
+    case 'JUBILEE': return getMidTierEmpireStats(empireSize);
+    default: return getLuxuryEmpireStats(empireSize);
+  }
+}
+
+exports.getEmpireSizeStats = getEmpireSizeStats;
+
+function getBudgetEmpireStats(size) {
+  let stats = {};
+  if (size <= 2) stats = { price: 200, first: 2000, second: 1000 };
+  if (size === 3) stats = { price: 300, first: 3000, second: 1500 };
+  if (size === 4) stats = { price: 400, first: 4000, second: 2000 };
+  if (size === 5) stats = { price: 500, first: 5000, second: 2500 };
+  if (size > 5 && size < 11) stats = { price: 600, first: 6000, second: 3000 };
+  if (size > 10 && size < 21) stats = { price: 700, first: 7000, second: 3500 };
+  if (size > 20 && size < 31) stats = { price: 800, first: 8000, second: 4000 };
+  if (size > 30 && size < 41) stats = { price: 900, first: 9000, second: 4500 };
+  if (size > 41) stats = { price: 1000, first: 10000, second: 5000 };
+
+  return stats;
+}
+
+function getMidTierEmpireStats(size) {
+  let stats = {};
+  if (size <= 2) stats = { price: 300, first: 3000, second: 1500 };
+  if (size === 3) stats = { price: 400, first: 4000, second: 2000 };
+  if (size === 4) stats = { price: 500, first: 5000, second: 2500 };
+  if (size === 5) stats = { price: 600, first: 6000, second: 3000 };
+  if (size > 5 && size < 11) stats = { price: 700, first: 7000, second: 3500 };
+  if (size > 10 && size < 21) stats = { price: 800, first: 8000, second: 4000 };
+  if (size > 20 && size < 31) stats = { price: 900, first: 9000, second: 4500 };
+  if (size > 30 && size < 41) stats = { price: 1000, first: 10000, second: 5000 };
+  if (size > 41) stats = { price: 1100, first: 11000, second: 5500 };
+
+  return stats;
+}
+
+function getLuxuryEmpireStats(size) {
+  let stats = {};
+  if (size <= 2) stats = { price: 400, first: 4000, second: 2000 };
+  if (size === 3) stats = { price: 500, first: 5000, second: 2500 };
+  if (size === 4) stats = { price: 600, first: 6000, second: 3000 };
+  if (size === 5) stats = { price: 700, first: 7000, second: 3500 };
+  if (size > 5 && size < 11) stats = { price: 800, first: 8000, second: 4000 };
+  if (size > 10 && size < 21) stats = { price: 900, first: 9000, second: 4500 };
+  if (size > 20 && size < 31) stats = { price: 1000, first: 10000, second: 5000 };
+  if (size > 30 && size < 41) stats = { price: 1100, first: 11000, second: 5500 };
+  if (size > 41) stats = { price: 1200, first: 12000, second: 6000 };
+
+  return stats;
 }
 
