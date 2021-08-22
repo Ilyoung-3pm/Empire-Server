@@ -1,4 +1,4 @@
-const { initializeGame, calculateDistanceTo1A } = require('./GameService.js');
+const { initializeGame, calculateDistanceTo1A, getAdjacentTiles, getAdjacentTilesOnBoard, shuffleTiles, getEmpiresByAdjacentTiles, getAvailableEmpires, getAvailableEmpiresWithAssets } = require('./GameService.js');
 
 var io;
 var games = {}; // keys -> id, players: {id: { name, tiles: [], cash: 6000 }}, activePlayer: id, board: { 1-A: null, 2-C: 'Wingspan' }
@@ -20,29 +20,47 @@ exports.initGame = function (socketIo, socket) {
 
   gameSocket.on('gameStatus', (gameId) => {
     console.log("got request for game status for game id", gameId);
-    transmitGameStatus(gameId, gameSocket);
+    transmitGameStatus(gameId);
   });
 
   gameSocket.on('startGame', (gameId) => {
+    console.log("starting game!");
     startGame(gameId);
+  });
+
+  gameSocket.on('playTile', (gameId, tile) => {
+    console.log("A player played a tile");
+    playTile(tile, gameId, gameSocket.id);
+  });
+
+  gameSocket.on('selectedEmpire', (gameId, empire) => {
+    addEmpireToBoard(gameId, empire, gameSocket.id);
   })
 
-  gameSocket.on('getTile', () => assignTileToPlayer(gameSocket));
+  //gameSocket.on('getTile', () => assignTileToPlayer(gameSocket));
 
   gameSocket.on('chat', (msg) => {
     transmitChat(msg, gameSocket);
   })
 }
 
-function transmitGameStatus(gameId, gameSocket) {
+/* Passes all game data to players in the game, except all player's holdings. */
+function transmitGameStatus(gameId) {
   console.log("transmitting game status from server", gameId);
-  console.log("gameId type", typeof gameId);
-  const game = games[gameId];
+  // Deep copy!
+  let game = JSON.parse(JSON.stringify(games[gameId]));
+
+  // Remove keys we don't want players to spy on, like other player's cash and tiles.
+  Object.keys(game.players).forEach((playerId) => {
+    delete game.players[playerId].tiles;
+    delete game.players[playerId].cash;
+    delete game.players[playerId].assets;
+  })
+
   io.to(gameId).emit('gameStatus', game);
 }
 
 function transmitChat(msg, gameSocket) {
-  console.log("sending msg from " + gameSocket.id + ": " + msg.msg);
   io.to(msg.gameId).emit('chat', { name: games[msg.gameId].players[gameSocket.id].name, msg: msg.msg });
 }
 
@@ -81,7 +99,7 @@ function joinExistingGame(playerName, existingGameId, gameSocket) {
         io.to(gameSocket.id).emit('log', `${game.players[playerId].name} is in the game.`);
       }
     })
-    games[existingGameId] = game;
+    //games[existingGameId] = game;
     transmitGameStatus(existingGameId);
     console.log("join existing game", games);
   } else {
@@ -92,39 +110,44 @@ function joinExistingGame(playerName, existingGameId, gameSocket) {
 function startGame(gameId) {
   io.to(gameId).emit('startGame', true);
   io.to(gameId).emit('log', "The game has started!");
-
-  const game = initializeGame(games[gameId]);
-  //games[gameId] = updatedGame;
+  let game = games[gameId];
+  game = initializeGame(game);
 
   // Assign the first tile and determine the first player.
   let firstPlayer;
   Object.keys(game.players).forEach((playerId) => {
-    const tile = game.tiles.pop();
+    let tile = game.tiles.pop();
+    let validTile = false;
+    while (!validTile) {
+      // Verify no empires are created when playing the first tile.
+      const adjacentTilesOnBoard = getAdjacentTilesOnBoard(tile, game.board);
+      if (adjacentTilesOnBoard.length === 0) {
+        validTile = true;
+      } else {
+        game.tiles.push(tile);
+        game.tiles = shuffleTiles(game.tiles);
+        tile = game.tiles.pop();
+      }
+    }
+
     game.board[tile] = null;
     if (!firstPlayer) {
       firstPlayer = { id: playerId, distance: calculateDistanceTo1A(tile) }
     } else {
       const distance = calculateDistanceTo1A(tile);
-      // TODO determine if tile is adjacent to another first tile....damn.
       if (distance < firstPlayer.distance) {
         firstPlayer = { id: playerId, distance: distance }
       }
     }
 
     const playerName = game.players[playerId].name;
-    game.players[playerId].tiles = [tile];
+    game.players[playerId].tiles.add(tile);
     io.to(gameId).emit('log', `${playerName}'s picked ${tile}`);
   });
-
-  io.to(gameId).emit('board', game.board);
 
   game.activePlayer = firstPlayer.id;
   // Nice TODO If playerId = socketId, emit player name to everyone BUT player. Emit "You go first" to socketId.
   io.to(gameId).emit('log', `${game.players[firstPlayer.id].name} was closest to 1-A. They go first.`);
-  io.to(gameId).emit('activePlayer', firstPlayer.id);
-
-  //Put tiles on the board.
-  //TODO Pop tiles from each players .tiles and assign to board?
 
   // Assign 6 tiles to each player.
   Object.keys(game.players).forEach((playerId) => {
@@ -138,22 +161,104 @@ function startGame(gameId) {
     io.to(playerId).emit('playerStatus', player);
   })
 
-  // Set active player to first player.
-
-  // Let players know what they have...
-  // Object.keys(updatedGame.players).forEach((playerId) => {
-  //   const playerStatus = updatedGame.players[playerId];
-  //   console.log(`Emitting status to player ${playerId}`, playerStatus);
-  //   io.to(playerId).emit('playerStatus', playerStatus);
-  // });
-  games[gameId] = game;
+  //games[gameId] = game;
+  transmitGameStatus(gameId);
 }
 
 function assignTileToPlayer(playerId, gameId) {
   console.log("Assigning a tile...");
-  // const game = games[gameId];
-  // const tile = game.tiles.pop();
-  // player.tiles = [firstTile];
-  // game.players[playerId] = player;
 
+  // TODO ensure tile is not a dead tile.
+
+  const game = games[gameId];
+  const tile = game.tiles.pop();
+  game.players[playerId].tiles.push(tile);
+  io.to(playerId).emit('playerStatus', game.players[playerId]);
+}
+
+function playTile(tile, gameId, playerId) {
+  let game = games[gameId];
+  const playerName = game.players[playerId].name;
+
+  // Remove tile from player tiles.
+  let playerTiles = new Set(game.players[playerId].tiles);
+  playerTiles.delete(tile);
+  game.players[playerId].tiles = Array.from(playerTiles);
+  io.to(gameId).emit('log', `${playerName} placed ${tile} on the board.`);
+  io.to(playerId).emit('playerStatus', game.players[playerId]);
+  // Add tile to board.
+  game.board[tile] = null;
+
+  /* Determine what the tile does...*/
+  // Are there any adjacent tiles on the board?
+  const adjacentTilesOnBoard = getAdjacentTilesOnBoard(tile, game.board);
+
+  if (adjacentTilesOnBoard.length > 0) {
+    console.log("There were adjacent tiles on the board");
+    // Do any adjacent tiles belong to an empire?
+    const empiresByAdjacentTiles = getEmpiresByAdjacentTiles(adjacentTilesOnBoard, game.empires);
+    console.log("empires by adjacent tiles", empiresByAdjacentTiles);
+    if (empiresByAdjacentTiles.size === 1) {
+      console.log("There was one adjacent empire");
+      // Growing an empire. Any active empires with assets? Time to buy. Otherwise, advance to next player.
+      const availableAssetsToBuy = getAvailableEmpiresWithAssets(game.empires);
+      if (availableAssetsToBuy.length > 0) {
+        io.to(playerId).emit('buyAssets', availableAssetsToBuy);
+      }
+    } else if (empiresByAdjacentTiles.size > 1) {
+      console.log("There was more than one adjacent empire");
+      // Are all empires safe? If YES - dead tile. If NO - MERGER.
+      // TODO
+    } else {
+      console.log("There were no adjacent empires. Getting empires with no tiles.");
+      // What empires have no tiles? 
+      const availableEmpires = getAvailableEmpires(game.empires);
+      console.log("Available empires to select", availableEmpires);
+      io.to(playerId).emit('selectEmpire', availableEmpires);
+    }
+  } else {
+    console.log("No adjacent tiles");
+    // No adjacent tiles. Any active empires with assets? Time to buy. Otherwise, advance to next player.
+    const availableAssetsToBuy = getAvailableEmpiresWithAssets(game.empires);
+    if (availableAssetsToBuy.length > 0) {
+      io.to(playerId).emit('buyAssets', availableAssetsToBuy);
+    } else {
+      console.log("Nothing to buy, next player");
+      advanceToNextPlayer(gameId);
+      assignTileToPlayer(playerId, gameId);
+    }
+  }
+
+  //games[gameId] = game;
+  transmitGameStatus(gameId);
+}
+
+function addEmpireToBoard(gameId, empire, playerId) {
+  let game = games[gameId];
+  // Set tiles in Empire.empire
+
+  // Update tile in Board obj.
+
+  // Log that player put empire on board.
+
+  // Give player one free asset of this empire.
+
+  // Subtract 1 asset from empire.
+
+  // Emit 'buyAssets' to player.
+
+  // TransmitGameStatus
+
+}
+
+function advanceToNextPlayer(gameId) {
+  let game = games[gameId];
+  const playerIds = Object.keys(game.players);
+  const activePlayerIndex = playerIds.indexOf(game.activePlayer);
+  if (activePlayerIndex === (playerIds.length - 1)) {
+    game.activePlayer = playerIds[0];
+  } else {
+    game.activePlayer = playerIds[activePlayerIndex + 1];
+  }
+  transmitGameStatus(gameId);
 }
